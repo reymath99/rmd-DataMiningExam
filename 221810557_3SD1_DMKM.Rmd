@@ -1,0 +1,182 @@
+---
+title: "UTS_DATA_MINING"
+author: "Reyhan Saadi"
+date: "10/27/2020"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+MELAKUKAN LOAD LIBRARY
+```{r}
+library(ggplot2)
+library(dplyr)
+#untuk random forest
+library(randomForest)
+library(caret)
+library(mltest)
+```
+
+TAHAP: 2 MELOAD DATASET
+```{r}
+library(readxl)
+df <- read_excel("E:/UTS DATMIN/2014 and 2015 CSM dataset.xlsx")
+View(df)
+
+#Melihat struktur dataset
+str(df)
+
+```
+
+DATA PREPROCESSING 
+
+```{r}
+#mengubah tipe data pada genre
+df$Genre<-as.factor(df$Genre)
+df$Sequel<-as.factor(df$Sequel)
+str(df)
+View(df)
+```
+```{r}
+#Melihat data yang masih bernilai NA untuk kemudian di imputasi dengan MEAN
+#mengetahui jumlah missing value
+sapply(df, function(x) sum(is.na(x)))
+```
+INTERPRETASI: DI SCREEN ADA 10 NA, BUDGET ADA 1 NA, AGREGATE FOLLOW ADA 35 NA
+```{r}
+#Melihat apakah terdapat NA lain
+data_naomit <- na.omit(df)
+sapply(data_naomit, function(x) sum(is.na(x)))
+```
+INTERPRETASI: TIDAK ADA NILAI NA LAIN
+
+
+MENGHILANGKAN NA
+```{r}
+#Imputasi dengan menggunakan rata-rata
+#BACKUP
+data_imputasi<-df
+#DATA SCREEN
+data_imputasi$Screens[is.na(data_imputasi$Screens)]<-mean(data_imputasi$Screens,na.rm=TRUE)
+#DATA AGGREGATE FOL
+data_imputasi$`Aggregate Followers`[is.na(data_imputasi$`Aggregate Followers`)]<-mean(data_imputasi$`Aggregate Followers`,na.rm=TRUE)
+
+#FATA BUDGET
+data_imputasi$Budget[is.na(data_imputasi$Budget)]<-mean(data_imputasi$Budget,na.rm=TRUE)
+
+```
+
+MELIHAT APAKAH MASIH TERDAPAT NA
+
+```{r}
+sapply(data_imputasi, function(x) sum(is.na(x)))
+```
+INTERPRETASI: DATA SUDAH TERBEBAS DARI NILAI NA
+
+TAHAP 3: MELAKUKAN KLASIFIKASI DATA RATING
+Misal kita ingin klasifikasi data rating berdasarkan nilai quartile Q1,Q2,Q3
+```{r}
+#Backup data
+data_classified<-data_imputasi
+#Klasifikasi
+#state.x77$grpFrost <- cut(state.x77$Frost, breaks = quantile(state.x77$Frost, c(0, 0.25, 0.5, 0.75, 1)), labels = c('hot', 'warm', 'chill', 'cold'))
+data_classified$Ratings <- cut(data_classified$Ratings, breaks = quantile(data_classified$Ratings, c(0, 0.25,0.75, 1)),labels = c("1","2","3"))
+
+#Membackup data
+backup<-data_classified
+
+str(backup)
+
+
+```
+```{r}
+data_backup<-backup
+names(data_backup)[14]<-"Aggregate_fol"
+str(data_backup)
+sapply(data_backup, function(x) sum(is.na(x)))
+```
+
+DI RATINGS ADA NA KITA IMPUTASI DENGAN MODUS
+```{r}
+my_mode <- function(x) {  # Create mode function 
+  unique_x <- unique(x)
+  mode <- unique_x[which.max(tabulate(match(x, unique_x)))]
+  mode
+}
+
+data_backup$Ratings[is.na(data_backup$Ratings)]<-my_mode(data_backup$Ratings[!is.na(data_backup$Ratings)])
+
+#Cek apakah masih ada yang NA
+sapply(data_backup, function(x) sum(is.na(x)))
+
+```
+
+
+TAHAP 3: MELAKUKAN SPLITTING DATA
+```{r}
+#Mengatur seed agar pengacakan tetap
+set.seed(123)
+#Backup data
+data_olah<-data_backup
+#Membagi split 80% sebagai data training dan 20% sebagai data test set
+sampling <- sample(1:nrow(data_olah), round(0.8*nrow(data_olah)))
+training_set <- data_olah[sampling,]
+test_set <- data_olah[-sampling,]
+str(training_set)
+```
+
+
+
+TAHAP 4 MELAKUKAN ALGORITMA KLASIFIKASI RANDOM FOREST
+TAHAP 4a RANDOM FOREST KONDISI DEFAULT
+```{r}
+#Menggunakan library randomForest
+persamaan<-Ratings~Genre+Gross+Budget+Screens+Sequel+Sentiment+Views+Likes+Dislikes+Comments+Aggregate_fol
+model1<- randomForest(formula=persamaan, data = training_set)
+summary(model1)
+```
+
+MELAKUKAN PREDIKSI
+```{r}
+prediksi1 <- predict(model1, newdata = test_set,type="class")
+head(prediksi1)
+```
+MENGHITUNG AKURASI
+```{r}
+accuracy<-mean(prediksi1==test_set$Ratings)
+accuracy
+```
+
+INTERPRETASI=> AKurasi menunjukkan seberapa tepat setiap kategori di kategorikan atau diklasifikasikan sesuai dengan kelas nya masing2. Hal ini menunjukkan bahwa apabila terdapat 100 pengamatan akurasi 65% maka sebanya 65-66 data diklasifikasikan sesuai dengan kelasnya, dan sisanya miss classification
+
+MENENTUKAN CONFFUSION MATRIKS
+```{r}
+#library caret
+confusionMatrix(prediksi1,test_set$Ratings)
+```
+
+Dari Prediksi conf Matriks=> sebanyak 14 data salah akurasi
+
+MENENTUKAN MASING2 INDIKATOR
+```{r}
+ CM_rf     <- ml_test(prediksi1 , test_set$Ratings, output.as.table = TRUE)
+print(CM_rf)
+```
+Sensitivity           0.44444   0.8400   0.4167
+Interpretasi=> 40% data benar diklasifikasikan ke kelas 1 dari seluruh data yang diklasifikasikan ke kelas 1,
+
+84% data benar diklasifikasikan ke kelas 2 dari seluruh data yang diklasifikasikan ke kelas 2,
+
+41.6% data benar diklasifikasikan ke kelas 3 dari seluruh data yang diklasifikasikan ke kelas 3,
+
+Precision menggambarkan tingkat keakuratan antara data yang diminta dengan hasil prediksi yang diberikan oleh model. Maka, precision merupakan rasio prediksi benar positif dibandingkan dengan keseluruhan hasil yang diprediksi positf. 
+0.8 => sebanyak 80% benar diklasifikasikan sebagai kelas 1( (rating rendah) dari semua data di kelas 1 (rating rendah)
+0.63 => sebanyak 63% benar diklasifikasikan sebagai kelas 2( (rating Sedang) dari semua data di kelas 2 (rating sedang)
+0.4167=>Sebanyak 62.5 benar diklasifikasikan sebagai kelas 3( (rating tinggi) dari semua data di kelas 3 (rat=tinggi)
+
+
